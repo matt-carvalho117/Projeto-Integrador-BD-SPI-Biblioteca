@@ -16,10 +16,20 @@ Link GitHub: [https\://github.com/matt-carvalho117/Projeto-Integrador-BD-SPI-Bib
 	Sistema de Biblioteca.
 
 2. **Descrever a organização fictícia e o problema que o banco deverá resolver.**  
-   	Uma pequena biblioteca de bairro, que o leitor pode ler no local ou realizar empréstimos. O controle é feito de forma manual num caderno de registros. Tal mecanismo gera falhas de controle pelos funcionários, das obras emprestadas e dos usuários  cadastrados, ocasionando na perda de livros do acervo. Desta forma, o sistema de banco de dados iria suprir esse gargalo do local.   
-3. **Identificar quais informações precisam ser armazenadas.**  
+   	Uma pequena biblioteca de bairro, que o leitor pode ler no local ou realizar empréstimos. O controle é feito de forma manual num caderno de registros. Tal mecanismo gera falhas de controle pelos funcionários, das obras emprestadas e dos usuários  cadastrados, ocasionando na perda de livros do acervo. Desta forma, o sistema de banco de dados iria suprir esse gargalo do local.
+   
+4. **Identificar quais informações precisam ser armazenadas.**
+
+   Para atender às necessidades operacionais e de controle da biblioteca, o banco de dados armazenará as seguintes informações agrupadas por domínio:Informações dos Leitores/Usuários: Identificação única do leitor (id_leitor), nome completo, endereço residencial, telefone de contato e e-mail.
+
+* Informações das Obras (Livros): Identificação única do livro (id_livro), título da obra, gênero literário, editora e idioma.
+* Informações dos Autores: Identificação única do autor (id_autor), nome completo, pseudônimo, nacionalidade e data de nascimento.
+* Informações da Associação Autor-Livro: Vínculo estruturado entre as obras e seus autores (id_livro_autor), permitindo o registro de coautoria.
+* Informações dos Exemplares: Identificação única física do exemplar (id_exemplar), vínculo com o livro correspondente (id_livro) e status atual de disponibilidade (ex.: disponível, emprestado, em manutenção).
+* Informações dos Empréstimos: Identificação única da transação (id_emprestimo), leitor associado (id_leitor), exemplar emprestado (id_exemplar), data de retirada, data prevista para devolução e data efetiva de devolução.
+* Informações das Reservas: Identificação única da reserva (id_reserva), leitor solicitante (id_leitor), livro desejado (id_livro), data em que a reserva foi realizada e status do pedido (ex.: aguardando, concluída, cancelada).   
      
-4. **Elaborar pelo menos 8 requisitos funcionais relacionados aos dados e às operações do sistema.**
+5. **Elaborar pelo menos 8 requisitos funcionais relacionados aos dados e às operações do sistema.**
 
 * Realizar o cadastro dos livros do acervo, com informações relacionadas à obra;  
 * Realizar o cadastro de usuários/leitores, com nome, endereço, telefone de contato e e-mail.;  
