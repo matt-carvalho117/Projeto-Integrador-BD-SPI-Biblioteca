@@ -1,6 +1,6 @@
 # Projeto-Integrador-BD-SPI-Biblioteca
 
-Projeto de banco de dados relacional desenvolvido para a disciplina de Introdução a Banco de Dados, no cusro de Tecnologia em Sistemas para Internet no IFTM - Campus Uberlândia Centro.
+Projeto de banco de dados relacional desenvolvido para a disciplina de Introdução a Banco de Dados, no curso de Tecnologia em Sistemas para Internet no IFTM - Campus Uberlândia Centro.
 
 Alunos envolvidos no projeto:
 
