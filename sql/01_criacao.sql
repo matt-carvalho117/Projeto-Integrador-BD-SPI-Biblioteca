@@ -2,35 +2,95 @@
 -- 1. LIMPEZA SEGURA DO AMBIENTE (Ordem inversa de dependência: Filhas -> Pais)
 -- ============================================================================
 
--- Remove Views dependentes primeiro
 DROP VIEW IF EXISTS vw_status_emprestimos;
 DROP VIEW IF EXISTS vw_disponibilidade_acervo;
 
--- Remove tabelas filhas (associativas e transacionais) antes das tabelas pai
 DROP TABLE IF EXISTS reserva;
 DROP TABLE IF EXISTS emprestimo;
 DROP TABLE IF EXISTS livro_autor;
 DROP TABLE IF EXISTS exemplar;
 
--- Remove tabelas independentes (pais)
 DROP TABLE IF EXISTS leitor;
 DROP TABLE IF EXISTS livro;
 DROP TABLE IF EXISTS autor;
 
--- Remove funções de gatilho antigas, se existirem
 DROP FUNCTION IF EXISTS fn_validar_e_bloquear_exemplar();
 DROP FUNCTION IF EXISTS fn_liberar_exemplar_devolucao();
+DROP FUNCTION IF EXISTS fn_limpar_cpf_leitor();
+DROP FUNCTION IF EXISTS fn_validar_cpf(VARCHAR);
 
 
 -- ============================================================================
--- 2. CRIAÇÃO DAS TABELAS E RESTRIÇÕES DE INTEGRIDADE
+-- 2. FUNÇÃO DE VALIDAÇÃO MATEMÁTICA DE CPF (IMMUTABLE para uso em CHECK)
+-- ============================================================================
+
+CREATE OR REPLACE FUNCTION fn_validar_cpf(p_cpf VARCHAR)
+RETURNS BOOLEAN AS $$
+DECLARE
+    v_soma INT;
+    v_resto INT;
+    v_digito1 INT;
+    v_digito2 INT;
+    i INT;
+BEGIN
+    -- 1. Verifica se possui exatamente 11 dígitos numéricos
+    IF p_cpf IS NULL OR p_cpf !~ '^\d{11}$' THEN
+        RETURN FALSE;
+    END IF;
+
+    -- 2. Rejeita CPFs com todos os dígitos iguais (ex: 11111111111)
+    IF p_cpf ~ '^(\d)\1{10}$' THEN
+        RETURN FALSE;
+    END IF;
+
+    -- 3. Cálculo do 1º dígito verificador
+    v_soma := 0;
+    FOR i IN 1..9 LOOP
+        v_soma := v_soma + (SUBSTRING(p_cpf, i, 1)::INT * (11 - i));
+    END LOOP;
+
+    v_resto := 11 - (v_soma % 11);
+    IF v_resto >= 10 THEN
+        v_digito1 := 0;
+    ELSE
+        v_digito1 := v_resto;
+    END IF;
+
+    IF v_digito1 <> SUBSTRING(p_cpf, 10, 1)::INT THEN
+        RETURN FALSE;
+    END IF;
+
+    -- 4. Cálculo do 2º dígito verificador
+    v_soma := 0;
+    FOR i IN 1..10 LOOP
+        v_soma := v_soma + (SUBSTRING(p_cpf, i, 1)::INT * (12 - i));
+    END LOOP;
+
+    v_resto := 11 - (v_soma % 11);
+    IF v_resto >= 10 THEN
+        v_digito2 := 0;
+    ELSE
+        v_digito2 := v_resto;
+    END IF;
+
+    IF v_digito2 <> SUBSTRING(p_cpf, 11, 1)::INT THEN
+        RETURN FALSE;
+    END IF;
+
+    RETURN TRUE;
+END;
+$$ LANGUAGE plpgsql IMMUTABLE;
+
+
+-- ============================================================================
+-- 3. CRIAÇÃO DAS TABELAS E RESTRIÇÕES DE INTEGRIDADE
 -- ============================================================================
 
 -- Tabela: Autor
 CREATE TABLE autor (
     id_autor SERIAL PRIMARY KEY,
     nome VARCHAR(150) NOT NULL,
-    pseudonimo VARCHAR(100),
+    pseudonimo VARCHAR(50),
     nacionalidade VARCHAR(100),
     data_nascimento DATE
 );
@@ -45,17 +105,17 @@ CREATE TABLE livro (
 );
 
 -- Tabela Associativa N:N: Livro_Autor
--- ON DELETE CASCADE aqui é seguro: se um livro ou autor for excluído, o vínculo deixa de existir.
 CREATE TABLE livro_autor (
     id_livro INT NOT NULL REFERENCES livro(id_livro) ON DELETE CASCADE,
     id_autor INT NOT NULL REFERENCES autor(id_autor) ON DELETE CASCADE,
     PRIMARY KEY (id_livro, id_autor)
 );
 
--- Tabela: Leitor
+-- Tabela: Leitor (com CPF único e validado)
+-- VARCHAR(14) permite receber '000.000.000-00' antes do trigger limpar para 11 dígitos
 CREATE TABLE leitor (
     id_leitor SERIAL PRIMARY KEY,
-    matricula VARCHAR(20) UNIQUE NOT NULL,
+    cpf VARCHAR(14) UNIQUE NOT NULL CONSTRAINT chk_cpf_valido CHECK (fn_validar_cpf(cpf)),
     nome VARCHAR(150) NOT NULL,
     telefone VARCHAR(20),
     email VARCHAR(100) UNIQUE NOT NULL,
@@ -63,8 +123,7 @@ CREATE TABLE leitor (
         CHECK (status IN ('Ativo', 'Bloqueado', 'Inativo'))
 );
 
--- Tabela: Exemplar (Unidades físicas do acervo)
--- ON DELETE RESTRICT impede apagar um livro se ainda existirem cópias físicas catalogadas.
+-- Tabela: Exemplar
 CREATE TABLE exemplar (
     id_exemplar SERIAL PRIMARY KEY,
     id_livro INT NOT NULL REFERENCES livro(id_livro) ON DELETE RESTRICT,
@@ -76,7 +135,6 @@ CREATE TABLE exemplar (
 );
 
 -- Tabela: Emprestimo
--- ON DELETE RESTRICT preserva o histórico de empréstimos de leitores e exemplares.
 CREATE TABLE emprestimo (
     id_emprestimo SERIAL PRIMARY KEY,
     id_leitor INT NOT NULL REFERENCES leitor(id_leitor) ON DELETE RESTRICT,
@@ -100,15 +158,13 @@ CREATE TABLE reserva (
 
 
 -- ============================================================================
--- 3. ÍNDICES DE PERFORMANCE E REGRAS DE NEGÓCIO
+-- 4. ÍNDICES DE PERFORMANCE E REGRAS DE NEGÓCIO
 -- ============================================================================
 
--- Regra crítica: Um exemplar não pode estar em dois empréstimos ativos simultaneamente
 CREATE UNIQUE INDEX idx_exemplar_emprestimo_ativo 
 ON emprestimo (id_exemplar) 
 WHERE data_devolucao IS NULL;
 
--- Índices para acelerar buscas frequentes por chaves estrangeiras e títulos
 CREATE INDEX idx_livro_titulo ON livro (titulo);
 CREATE INDEX idx_exemplar_livro ON exemplar (id_livro);
 CREATE INDEX idx_emprestimo_leitor ON emprestimo (id_leitor);
@@ -116,11 +172,26 @@ CREATE INDEX idx_reserva_livro_status ON reserva (id_livro, status);
 
 
 -- ============================================================================
--- 4. AUTOMAÇÃO VIA TRIGGERS (Consistência entre Empréstimo e Exemplar)
+-- 5. AUTOMAÇÃO VIA TRIGGERS
 -- ============================================================================
 
--- Trigger 1: Valida se o leitor está ativo e se o exemplar está disponível antes de emprestar,
--- atualizando automaticamente o status do exemplar para 'Emprestado'.
+-- Trigger 1: Remove pontos e traços do CPF antes da validação do CHECK
+CREATE OR REPLACE FUNCTION fn_limpar_cpf_leitor()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF NEW.cpf IS NOT NULL THEN
+        NEW.cpf := REGEXP_REPLACE(NEW.cpf, '[^0-9]', '', 'g');
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_antes_salvar_leitor
+BEFORE INSERT OR UPDATE OF cpf ON leitor
+FOR EACH ROW
+EXECUTE FUNCTION fn_limpar_cpf_leitor();
+
+-- Trigger 2: Valida leitor/exemplar e bloqueia o exemplar ao emprestar
 CREATE OR REPLACE FUNCTION fn_validar_e_bloquear_exemplar()
 RETURNS TRIGGER AS $$
 DECLARE
@@ -150,7 +221,7 @@ BEFORE INSERT ON emprestimo
 FOR EACH ROW
 EXECUTE FUNCTION fn_validar_e_bloquear_exemplar();
 
--- Trigger 2: Libera o exemplar automaticamente quando data_devolucao é preenchida
+-- Trigger 3: Libera o exemplar automaticamente na devolução
 CREATE OR REPLACE FUNCTION fn_liberar_exemplar_devolucao()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -170,15 +241,14 @@ EXECUTE FUNCTION fn_liberar_exemplar_devolucao();
 
 
 -- ============================================================================
--- 5. VIEWS (Consultas inteligentes em tempo real sem redundância)
+-- 6. VIEWS (Consultas em tempo real)
 -- ============================================================================
 
--- View 1: Calcula o status real dos empréstimos ('Ativo', 'Em Atraso', 'Devolvido')
 CREATE VIEW vw_status_emprestimos AS
 SELECT 
     emp.id_emprestimo,
     emp.id_leitor,
-    lei.matricula,
+    lei.cpf,
     lei.nome AS nome_leitor,
     emp.id_exemplar,
     ex.codigo_barras,
@@ -197,7 +267,6 @@ JOIN leitor lei ON emp.id_leitor = lei.id_leitor
 JOIN exemplar ex ON emp.id_exemplar = ex.id_exemplar
 JOIN livro l ON ex.id_livro = l.id_livro;
 
--- View 2: Resumo de disponibilidade de exemplares por título
 CREATE VIEW vw_disponibilidade_acervo AS
 SELECT 
     l.id_livro,
