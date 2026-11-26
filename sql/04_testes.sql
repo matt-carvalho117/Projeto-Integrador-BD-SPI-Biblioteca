@@ -7,9 +7,16 @@ CREATE TEMP TABLE contexto_teste (
     id_livro_crud INT,
     id_livro_regras INT,
     id_exemplar INT,
+    id_exemplar_atraso INT,
     id_leitor_ativo INT,
     id_leitor_bloqueado INT,
+    id_leitor_atraso INT,
     id_emprestimo INT
+) ON COMMIT DROP;
+
+CREATE TEMP TABLE contexto_exemplares_limite (
+    ordem INT PRIMARY KEY,
+    id_exemplar INT NOT NULL
 ) ON COMMIT DROP;
 
 INSERT INTO contexto_teste DEFAULT VALUES;
@@ -85,7 +92,7 @@ WITH cpfs_disponiveis AS (
           WHERE leitor.cpf = LPAD(serie.numero::TEXT, 11, '0')
       )
     ORDER BY serie.numero
-    LIMIT 2
+    LIMIT 3
 ),
 cpfs_numerados AS (
     SELECT numero,
@@ -102,20 +109,25 @@ leitores_inseridos AS (
            'Leitor de teste ' || txid_current() || ' ' || ordem,
            'teste_integridade_' || txid_current() || '_' || ordem ||
                '@example.invalid',
-           CASE WHEN ordem = 1 THEN 'Ativo' ELSE 'Bloqueado' END
+           CASE WHEN ordem = 2 THEN 'Bloqueado' ELSE 'Ativo' END
     FROM cpfs_numerados
-    RETURNING id_leitor, status
+    RETURNING id_leitor, email
 )
 UPDATE contexto_teste AS contexto
 SET id_leitor_ativo = (
         SELECT id_leitor
         FROM leitores_inseridos
-        WHERE status = 'Ativo'
+        WHERE email = 'teste_integridade_' || txid_current() || '_1@example.invalid'
     ),
     id_leitor_bloqueado = (
         SELECT id_leitor
         FROM leitores_inseridos
-        WHERE status = 'Bloqueado'
+        WHERE email = 'teste_integridade_' || txid_current() || '_2@example.invalid'
+    ),
+    id_leitor_atraso = (
+        SELECT id_leitor
+        FROM leitores_inseridos
+        WHERE email = 'teste_integridade_' || txid_current() || '_3@example.invalid'
     );
 
 DO $$
@@ -126,23 +138,38 @@ BEGIN
         WHERE id_livro_regras IS NULL
            OR id_leitor_ativo IS NULL
            OR id_leitor_bloqueado IS NULL
+           OR id_leitor_atraso IS NULL
     ) THEN
         RAISE EXCEPTION 'Nao foi possivel criar todos os registros de teste.';
     END IF;
 END;
 $$;
 
-WITH exemplar_inserido AS (
-    INSERT INTO exemplar (id_livro, codigo_barras, localizacao)
-    SELECT id_livro_regras,
-           'TESTE-' || txid_current(),
-           'Localizacao de teste'
-    FROM contexto_teste
-    RETURNING id_exemplar
-)
-UPDATE contexto_teste AS contexto
-SET id_exemplar = exemplar_inserido.id_exemplar
-FROM exemplar_inserido;
+INSERT INTO exemplar (id_livro, codigo_barras, localizacao)
+SELECT contexto.id_livro_regras,
+       'TESTE-' || txid_current() || '-' || serie.numero,
+       'Localizacao de teste'
+FROM contexto_teste AS contexto
+CROSS JOIN generate_series(1, 5) AS serie(numero);
+
+UPDATE contexto_teste
+SET id_exemplar = (
+        SELECT id_exemplar
+        FROM exemplar
+        WHERE codigo_barras = 'TESTE-' || txid_current() || '-1'
+    ),
+    id_exemplar_atraso = (
+        SELECT id_exemplar
+        FROM exemplar
+        WHERE codigo_barras = 'TESTE-' || txid_current() || '-2'
+    );
+
+INSERT INTO contexto_exemplares_limite (ordem, id_exemplar)
+SELECT serie.numero, exemplar.id_exemplar
+FROM generate_series(1, 3) AS serie(numero)
+JOIN exemplar
+  ON exemplar.codigo_barras =
+     'TESTE-' || txid_current() || '-' || (serie.numero + 2);
 
 -- Confirma a criacao dos leitores e do exemplar de teste.
 SELECT leitor.id_leitor, leitor.nome, leitor.cpf, leitor.status
@@ -251,6 +278,29 @@ $$;
 DO $$
 DECLARE
     v_id_leitor INT;
+    v_id_exemplar INT;
+BEGIN
+    SELECT contexto.id_leitor_ativo, limite.id_exemplar
+    INTO v_id_leitor, v_id_exemplar
+    FROM contexto_teste AS contexto
+    CROSS JOIN contexto_exemplares_limite AS limite
+    WHERE limite.ordem = 3;
+
+    BEGIN
+        INSERT INTO emprestimo (id_leitor, id_exemplar, data_prevista_devolucao)
+        VALUES (v_id_leitor, v_id_exemplar, CURRENT_DATE + 8);
+
+        RAISE EXCEPTION 'Falha no teste: o prazo superior a sete dias deveria ser rejeitado.';
+    EXCEPTION
+        WHEN check_violation THEN
+            RAISE NOTICE 'OK: CHECK limita o prazo do emprestimo a sete dias.';
+    END;
+END;
+$$;
+
+DO $$
+DECLARE
+    v_id_leitor INT;
     v_id_livro INT;
 BEGIN
     SELECT id_leitor_ativo, id_livro_regras
@@ -265,6 +315,32 @@ BEGIN
     EXCEPTION
         WHEN check_violation THEN
             RAISE NOTICE 'OK: CHECK rejeita status de reserva nao permitido.';
+    END;
+END;
+$$;
+
+DO $$
+DECLARE
+    v_id_leitor INT;
+    v_id_livro INT;
+    v_mensagem TEXT;
+BEGIN
+    SELECT id_leitor_ativo, id_livro_regras
+    INTO v_id_leitor, v_id_livro
+    FROM contexto_teste;
+
+    BEGIN
+        INSERT INTO reserva (id_leitor, id_livro, status)
+        VALUES (v_id_leitor, v_id_livro, 'Pendente');
+
+        RAISE EXCEPTION 'Falha no teste: reserva pendente com exemplar disponivel deveria ser rejeitada.';
+    EXCEPTION
+        WHEN raise_exception THEN
+            GET STACKED DIAGNOSTICS v_mensagem = MESSAGE_TEXT;
+            IF v_mensagem NOT LIKE 'Reserva pendente negada: há exemplares disponíveis%' THEN
+                RAISE;
+            END IF;
+            RAISE NOTICE 'OK: trigger so permite reserva pendente sem exemplares disponiveis.';
     END;
 END;
 $$;
@@ -373,6 +449,88 @@ BEGIN
 END;
 $$;
 
+INSERT INTO emprestimo (
+    id_leitor,
+    id_exemplar,
+    data_retirada,
+    data_prevista_devolucao
+)
+SELECT id_leitor_atraso,
+       id_exemplar_atraso,
+       CURRENT_TIMESTAMP - INTERVAL '8 days',
+       CURRENT_DATE - 1
+FROM contexto_teste;
+
+-- Confirma o registro ativo em atraso usado no teste de elegibilidade.
+SELECT id_emprestimo, id_leitor, data_prevista_devolucao, data_devolucao
+FROM emprestimo
+WHERE id_leitor = (SELECT id_leitor_atraso FROM contexto_teste)
+  AND data_devolucao IS NULL;
+
+DO $$
+DECLARE
+    v_id_leitor INT;
+    v_id_exemplar INT;
+    v_mensagem TEXT;
+BEGIN
+    SELECT contexto.id_leitor_atraso, limite.id_exemplar
+    INTO v_id_leitor, v_id_exemplar
+    FROM contexto_teste AS contexto
+    CROSS JOIN contexto_exemplares_limite AS limite
+    WHERE limite.ordem = 3;
+
+    BEGIN
+        INSERT INTO emprestimo (id_leitor, id_exemplar, data_prevista_devolucao)
+        VALUES (v_id_leitor, v_id_exemplar, CURRENT_DATE + 7);
+
+        RAISE EXCEPTION 'Falha no teste: leitor em atraso nao deveria poder emprestar.';
+    EXCEPTION
+        WHEN raise_exception THEN
+            GET STACKED DIAGNOSTICS v_mensagem = MESSAGE_TEXT;
+            IF v_mensagem NOT LIKE 'Empréstimo negado: o leitor possui empréstimo em atraso%' THEN
+                RAISE;
+            END IF;
+            RAISE NOTICE 'OK: trigger bloqueia novo emprestimo enquanto houver atraso.';
+    END;
+END;
+$$;
+
+INSERT INTO emprestimo (id_leitor, id_exemplar, data_prevista_devolucao)
+SELECT contexto.id_leitor_ativo,
+       limite.id_exemplar,
+       CURRENT_DATE + 7
+FROM contexto_teste AS contexto
+JOIN contexto_exemplares_limite AS limite ON limite.ordem <= 2
+ORDER BY limite.ordem;
+
+DO $$
+DECLARE
+    v_id_leitor INT;
+    v_id_exemplar INT;
+    v_mensagem TEXT;
+BEGIN
+    SELECT contexto.id_leitor_ativo, limite.id_exemplar
+    INTO v_id_leitor, v_id_exemplar
+    FROM contexto_teste AS contexto
+    CROSS JOIN contexto_exemplares_limite AS limite
+    WHERE limite.ordem = 3;
+
+    BEGIN
+        INSERT INTO emprestimo (id_leitor, id_exemplar, data_prevista_devolucao)
+        VALUES (v_id_leitor, v_id_exemplar, CURRENT_DATE + 7);
+
+        RAISE EXCEPTION 'Falha no teste: o quarto emprestimo ativo deveria ser rejeitado.';
+    EXCEPTION
+        WHEN raise_exception THEN
+            GET STACKED DIAGNOSTICS v_mensagem = MESSAGE_TEXT;
+            IF v_mensagem NOT LIKE 'Empréstimo negado: limite de 3 empréstimos ativos%' THEN
+                RAISE;
+            END IF;
+            RAISE NOTICE 'OK: trigger limita o leitor a tres emprestimos ativos.';
+    END;
+END;
+$$;
+
 DO $$
 DECLARE
     v_id_emprestimo INT;
@@ -421,7 +579,7 @@ BEGIN
 
         RAISE EXCEPTION 'Falha no teste: livro com exemplar deveria ser protegido.';
     EXCEPTION
-        WHEN foreign_key_violation THEN
+        WHEN restrict_violation THEN
             RAISE NOTICE 'OK: chave estrangeira impede excluir livro com exemplar associado.';
     END;
 END;
