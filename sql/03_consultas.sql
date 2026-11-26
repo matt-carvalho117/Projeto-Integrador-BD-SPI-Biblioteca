@@ -4,7 +4,7 @@
 -- 1. SELECT, WHERE, operadores lógicos, filtros e ordenação
 -- ============================================================================
 
--- 1.1 Livros em português dos gêneros fantasia ou romance.
+-- Enunciado 1.1: Quais livros em português são de fantasia ou romance?
 SELECT id_livro, titulo, genero, editora
 FROM livro
 WHERE idioma = 'Português'
@@ -12,14 +12,14 @@ WHERE idioma = 'Português'
 ORDER BY titulo
 LIMIT 10;
 
--- 1.2 Leitores ativos que possuem telefone cadastrado.
+-- Enunciado 1.2: Quais leitores ativos possuem telefone cadastrado?
 SELECT id_leitor, nome, email, telefone
 FROM leitor
 WHERE status = 'Ativo'
   AND telefone IS NOT NULL
 ORDER BY nome;
 
--- 1.3 Empréstimos em atraso, ainda ativos ou devolvidos após o prazo.
+-- Enunciado 1.3: Quais empréstimos estão atrasados ou foram devolvidos após o prazo?
 SELECT id_emprestimo, id_leitor, data_prevista_devolucao, data_devolucao
 FROM emprestimo
 WHERE (data_devolucao IS NULL AND data_prevista_devolucao < CURRENT_DATE)
@@ -31,14 +31,14 @@ LIMIT 10;
 -- 2. Consultas com JOIN (incluindo três ou mais tabelas e LEFT JOIN)
 -- ============================================================================
 
--- 2.1 Exemplares disponíveis, com os dados do livro correspondente.
+-- Enunciado 2.1: Quais exemplares estão disponíveis e a que livros pertencem?
 SELECT l.titulo, l.genero, ex.codigo_barras, ex.localizacao
 FROM exemplar ex
 JOIN livro l ON l.id_livro = ex.id_livro
 WHERE ex.status = 'Disponível'
 ORDER BY l.titulo, ex.codigo_barras;
 
--- 2.2 Empréstimos ativos: leitor, exemplar e livro (quatro tabelas).
+-- Enunciado 2.2: Quais leitores estão com livros emprestados e quais são os prazos?
 SELECT emp.id_emprestimo,
        lei.nome AS nome_leitor,
        l.titulo,
@@ -52,8 +52,7 @@ JOIN livro l ON l.id_livro = ex.id_livro
 WHERE emp.data_devolucao IS NULL
 ORDER BY emp.data_prevista_devolucao, lei.nome;
 
--- 2.3 Todos os leitores e seus empréstimos ativos, inclusive quem não possui
--- nenhum empréstimo ativo.
+-- Enunciado 2.3: Quais leitores têm empréstimos ativos, incluindo os que não têm?
 SELECT lei.id_leitor,
        lei.nome AS nome_leitor,
        emp.id_emprestimo,
@@ -68,15 +67,14 @@ ORDER BY lei.nome, emp.data_prevista_devolucao;
 -- 3. Funções de agregação, GROUP BY e HAVING
 -- ============================================================================
 
--- 3.1 Quantidade de livros por gênero, exibindo gêneros com pelo menos
--- dois títulos.
+-- Enunciado 3.1: Quantos livros há por gênero, considerando gêneros com dois títulos?
 SELECT genero, COUNT(*) AS quantidade_livros
 FROM livro
 GROUP BY genero
 HAVING COUNT(*) >= 2
 ORDER BY quantidade_livros DESC, genero;
 
--- 3.2 Leitores com dois ou mais empréstimos registrados.
+-- Enunciado 3.2: Quais leitores possuem dois ou mais empréstimos registrados?
 SELECT lei.id_leitor, lei.nome, COUNT(emp.id_emprestimo) AS total_emprestimos
 FROM leitor lei
 JOIN emprestimo emp ON emp.id_leitor = lei.id_leitor
@@ -88,7 +86,7 @@ ORDER BY total_emprestimos DESC, lei.nome;
 -- 4. Consultas utilizando subconsultas
 -- ============================================================================
 
--- 4.1 Livros com mais exemplares do que a média por livro.
+-- Enunciado 4.1: Quais livros têm mais exemplares do que a média do acervo?
 -- A subconsulta no SELECT é escalar e correlacionada ao livro.
 SELECT l.id_livro,
        l.titulo,
@@ -108,7 +106,7 @@ WHERE (SELECT COUNT(*)
        ) AS contagem)
 ORDER BY total_exemplares DESC, l.titulo;
 
--- 4.2 Livros com reserva pendente e sem nenhum exemplar disponível.
+-- Enunciado 4.2: Quais livros têm reserva pendente e nenhum exemplar disponível?
 SELECT l.id_livro, l.titulo
 FROM livro l
 WHERE EXISTS (
@@ -129,7 +127,7 @@ ORDER BY l.titulo;
 -- 5. Consultas adicionais para perguntas importantes do negócio
 -- ============================================================================
 
--- 5.1 Quais empréstimos ativos estão atrasados e há quantos dias?
+-- Enunciado 5.1: Quais empréstimos ativos estão atrasados e por quantos dias?
 SELECT emp.id_emprestimo,
        lei.nome AS nome_leitor,
        l.titulo,
@@ -144,7 +142,7 @@ WHERE emp.data_devolucao IS NULL
 ORDER BY dias_em_atraso DESC, lei.nome
 LIMIT 10;
 
--- 5.2 Quais livros têm mais reservas pendentes do que exemplares disponíveis?
+-- Enunciado 5.2: Quais livros têm mais reservas pendentes que cópias disponíveis?
 -- A consulta ajuda a identificar títulos cuja demanda supera a disponibilidade.
 SELECT l.id_livro,
        l.titulo,
