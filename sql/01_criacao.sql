@@ -16,6 +16,7 @@ DROP TABLE IF EXISTS autor;
 
 DROP FUNCTION IF EXISTS fn_validar_e_bloquear_exemplar();
 DROP FUNCTION IF EXISTS fn_liberar_exemplar_devolucao();
+DROP FUNCTION IF EXISTS fn_validar_reserva_pendente();
 DROP FUNCTION IF EXISTS fn_limpar_cpf_leitor();
 DROP FUNCTION IF EXISTS fn_validar_cpf(VARCHAR);
 
@@ -143,6 +144,7 @@ CREATE TABLE emprestimo (
     data_prevista_devolucao DATE NOT NULL,
     data_devolucao DATE,
     CONSTRAINT chk_datas_emprestimo CHECK (data_prevista_devolucao >= data_retirada::date),
+    CONSTRAINT chk_prazo_emprestimo_maximo CHECK (data_prevista_devolucao <= data_retirada::date + 7),
     CONSTRAINT chk_data_devolucao_valida CHECK (data_devolucao IS NULL OR data_devolucao >= data_retirada::date)
 );
 
@@ -197,10 +199,38 @@ RETURNS TRIGGER AS $$
 DECLARE
     v_status_exemplar VARCHAR(20);
     v_status_leitor VARCHAR(20);
+    v_emprestimos_ativos INT;
 BEGIN
-    SELECT status INTO v_status_leitor FROM leitor WHERE id_leitor = NEW.id_leitor;
-    IF v_status_leitor <> 'Ativo' THEN
+    SELECT status
+    INTO v_status_leitor
+    FROM leitor
+    WHERE id_leitor = NEW.id_leitor
+    FOR UPDATE;
+
+    IF v_status_leitor IS DISTINCT FROM 'Ativo' THEN
         RAISE EXCEPTION 'Empréstimo negado: o leitor possui status "%".', v_status_leitor;
+    END IF;
+
+    IF NEW.data_devolucao IS NULL THEN
+        IF EXISTS (
+            SELECT 1
+            FROM emprestimo
+            WHERE id_leitor = NEW.id_leitor
+              AND data_devolucao IS NULL
+              AND data_prevista_devolucao < CURRENT_DATE
+        ) THEN
+            RAISE EXCEPTION 'Empréstimo negado: o leitor possui empréstimo em atraso.';
+        END IF;
+
+        SELECT COUNT(*)
+        INTO v_emprestimos_ativos
+        FROM emprestimo
+        WHERE id_leitor = NEW.id_leitor
+          AND data_devolucao IS NULL;
+
+        IF v_emprestimos_ativos >= 3 THEN
+            RAISE EXCEPTION 'Empréstimo negado: limite de 3 empréstimos ativos atingido.';
+        END IF;
     END IF;
 
     SELECT status INTO v_status_exemplar FROM exemplar WHERE id_exemplar = NEW.id_exemplar FOR UPDATE;
@@ -239,6 +269,30 @@ AFTER UPDATE OF data_devolucao ON emprestimo
 FOR EACH ROW
 EXECUTE FUNCTION fn_liberar_exemplar_devolucao();
 
+-- Trigger 4: Reserva pendente so e permitida sem exemplares disponiveis
+CREATE OR REPLACE FUNCTION fn_validar_reserva_pendente()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF NEW.status = 'Pendente'
+       AND EXISTS (
+           SELECT 1
+           FROM exemplar
+           WHERE id_livro = NEW.id_livro
+             AND status = 'Disponível'
+       ) THEN
+        RAISE EXCEPTION 'Reserva pendente negada: há exemplares disponíveis para o livro %.',
+            NEW.id_livro;
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_validar_reserva_pendente
+BEFORE INSERT OR UPDATE OF id_livro, status ON reserva
+FOR EACH ROW
+EXECUTE FUNCTION fn_validar_reserva_pendente();
+
 
 -- ============================================================================
 -- 6. VIEWS (Consultas em tempo real)
@@ -274,9 +328,9 @@ SELECT
     l.genero,
     l.editora,
     STRING_AGG(DISTINCT a.nome, ', ') AS autores,
-    COUNT(ex.id_exemplar) AS total_exemplares,
-    COUNT(ex.id_exemplar) FILTER (WHERE ex.status = 'Disponível') AS disponiveis,
-    COUNT(ex.id_exemplar) FILTER (WHERE ex.status = 'Emprestado') AS emprestados
+    COUNT(DISTINCT ex.id_exemplar) AS total_exemplares,
+    COUNT(DISTINCT ex.id_exemplar) FILTER (WHERE ex.status = 'Disponível') AS disponiveis,
+    COUNT(DISTINCT ex.id_exemplar) FILTER (WHERE ex.status = 'Emprestado') AS emprestados
 FROM livro l
 LEFT JOIN livro_autor la ON l.id_livro = la.id_livro
 LEFT JOIN autor a ON la.id_autor = a.id_autor
