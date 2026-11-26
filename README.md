@@ -25,23 +25,32 @@ Execute os scripts na seguinte ordem, no PostgreSQL/Supabase:
 3. `sql/03_consultas.sql` contém as 12 consultas de análise. Execute cada consulta para visualizar seu resultado.
 4. `sql/04_testes.sql` demonstra INSERT, UPDATE, DELETE e testes de integridade em uma transação finalizada com `ROLLBACK`.
 
-## Documentação e evidências
+## Documentação, entregas e evidências
 
-Os documentos de requisitos, regras de negócio, DER, modelo relacional e dicionário de dados estão em `documentacao/`, junto da documentação e apresentação da Semana 4. Os fontes Markdown desses documentos ficam em `documentacao/fontes/`. `evidencias/resultados_consultas_local.md` registra a execução local; capturas da instância Supabase devem ser adicionadas em `evidencias/capturas_de_tela/`.
+Os documentos técnicos — requisitos, regras de negócio, DER, modelo relacional e dicionário de dados — estão em `documentacao/`; seus fontes Markdown ficam em `documentacao/fontes/`. Os relatórios das quatro etapas estão reunidos em `entregas/`, com fontes Markdown e imagens de apoio em `entregas/fontes/`. `evidencias/resultados_consultas_local.md` registra a execução local; capturas da instância Supabase devem ser adicionadas em `evidencias/capturas_de_tela/`.
 
-├── 1º Semana.pdf
-├── 2º Semana.pdf
-├── 3º Semana.pdf
 ├── README.md
 ├── documentacao/
-│   ├── apresentacao_semana_4.pdf
 │   ├── der.pdf
 │   ├── dicionario_de_dados.pdf
-│   ├── entrega_semana_4.pdf
 │   ├── fontes/
+│   │   ├── dicionario_de_dados.md
+│   │   ├── modelo_relacional.md
+│   │   └── regras_de_negocio.md
 │   ├── modelo_relacional.pdf
 │   ├── requisitos.pdf
 │   └── regras_de_negocio.pdf
+├── entregas/
+│   ├── 1ª Semana.pdf
+│   ├── 2ª Semana.pdf
+│   ├── 3ª Semana.pdf
+│   ├── 4ª Semana.pdf
+│   └── fontes/
+│       ├── 1ª Semana.md
+│       ├── 2ª Semana.md
+│       ├── 3ª Semana.md
+│       ├── 4ª Semana.md
+│       └── assets/
 ├── evidencias/
 │   ├── README.md
 │   ├── resultados_consultas_local.md

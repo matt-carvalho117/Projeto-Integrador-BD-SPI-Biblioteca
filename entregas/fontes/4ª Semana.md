@@ -1,10 +1,11 @@
-# Entrega da Semana 4 — Biblioteca Carolina Maria de Jesus
+# Entrega da 4ª Semana
+## População, consultas SQL, testes e validação
 
-## Objetivo
+### 1. Objetivo da etapa
 
 Demonstrar que o banco de dados armazena um conjunto coerente de informações e responde a necessidades de consulta, manipulação e integridade da biblioteca.
 
-## Parte A — População
+### 2. População dos dados
 
 O script `sql/02_populacao.sql` cria uma massa demonstrativa com **64 registros** distribuídos pelas sete tabelas:
 
@@ -21,7 +22,7 @@ O script `sql/02_populacao.sql` cria uma massa demonstrativa com **64 registros*
 
 Há empréstimos ativos, atrasados e devolvidos antes, no prazo e depois do vencimento. As reservas têm os quatro estados permitidos. O catálogo inclui um exemplar disponível sem histórico de empréstimos ou reservas. O próprio script valida o total mínimo de 60 e que todas as tabelas estão populadas.
 
-## Parte B — Consultas
+### 3. Consultas SQL
 
 O script `sql/03_consultas.sql` contém 12 consultas com enunciados:
 
@@ -33,18 +34,18 @@ O script `sql/03_consultas.sql` contém 12 consultas com enunciados:
 
 `ORDER BY` é usado para priorizar e organizar os resultados; `LIMIT` aparece nas consultas de listagem mais relevantes.
 
-## Parte C — Manipulação e integridade
+### 4. Manipulação e integridade
 
 O script `sql/04_testes.sql` demonstra `INSERT`, `UPDATE` e `DELETE`, com consultas de confirmação. Testa FKs, CPF inválido e duplicado, domínios de status, prazo máximo, reserva sem disponibilidade, leitor bloqueado/em atraso, limite de três empréstimos ativos, exclusividade de exemplar ativo e os triggers de retirada/devolução. Toda a demonstração termina em `ROLLBACK`.
 
-## Parte D — Apresentação
-
-`apresentacao_semana_4.pdf` organiza a demonstração do problema, requisitos, DER, estrutura, dados, consultas, testes, dificuldades e soluções. Os exemplos de consulta foram executados com a população do projeto em PostgreSQL embutido (PGlite).
-
-## Execução
+### 5. Execução dos scripts
 
 Execute `01_criacao.sql`, depois `02_populacao.sql`, consulte `03_consultas.sql` e finalize com `04_testes.sql`. O primeiro script apaga e recria as tabelas; use-o apenas em uma base de demonstração.
 
-## Evidências
+### 6. Evidências e validação
 
-Os resultados anexos registram a validação local dos scripts. Antes da entrega, ainda devem ser feitas capturas de tela dos resultados na instância Supabase da equipe e inseridas em `evidencias/capturas_de_tela/`; a validação local não substitui evidência da instância hospedada.
+Os scripts foram executados em PostgreSQL embutido (PGlite), e os resultados locais estão em `evidencias/resultados_consultas_local.md`. Antes da entrega final, ainda devem ser feitas capturas dos resultados na instância Supabase da equipe e inseridas em `evidencias/capturas_de_tela/`; a validação local não substitui evidência da instância hospedada.
+
+### 7. Resultado da etapa
+
+A entrega reúne população diversificada, doze consultas, operações de manipulação e testes de integridade referencial e das regras principais. Os testes destrutivos terminam com `ROLLBACK`, preservando a população inicial.
